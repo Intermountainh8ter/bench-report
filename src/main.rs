@@ -53,6 +53,76 @@ enum Cmd {
         #[arg(long)]
         splice_into: Option<PathBuf>,
     },
+    /// Write a reproducibility manifest: SHA-256 of every regular file
+    /// under each given path (recursively; hidden files skipped), plus the
+    /// toolchain and the time. Exit code 1 if `--check` is given and any
+    /// hash in the existing manifest differs.
+    Manifest {
+        /// Files or directories to hash. Directories are walked.
+        #[arg(long, required = true, num_args = 1..)]
+        paths: Vec<PathBuf>,
+        /// Destination manifest JSON.
+        #[arg(long)]
+        out: PathBuf,
+        /// Compare against the existing manifest at `--out` instead of writing.
+        #[arg(long, default_value_t = false)]
+        check: bool,
+    },
+}
+
+fn walk(p: &PathBuf, acc: &mut Vec<PathBuf>) -> anyhow::Result<()> {
+    if p.is_dir() {
+        let mut kids: Vec<PathBuf> = std::fs::read_dir(p)?
+            .filter_map(|e| e.ok())
+            .map(|e| e.path())
+            .filter(|k| {
+                !k.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with('.'))
+            })
+            .collect();
+        kids.sort();
+        for k in kids {
+            walk(&k, acc)?;
+        }
+    } else if p.is_file() {
+        acc.push(p.clone());
+    }
+    Ok(())
+}
+
+fn sha256_file(p: &PathBuf) -> anyhow::Result<String> {
+    use sha2::Digest;
+    let bytes = std::fs::read(p)?;
+    Ok(hex::encode(sha2::Sha256::digest(&bytes)))
+}
+
+fn build_manifest(paths: &[PathBuf]) -> anyhow::Result<serde_json::Value> {
+    let mut files = Vec::new();
+    for p in paths {
+        walk(p, &mut files)?;
+    }
+    let mut entries = serde_json::Map::new();
+    for f in &files {
+        entries.insert(f.to_string_lossy().into_owned(), serde_json::Value::String(sha256_file(f)?));
+    }
+    let toolchain = std::process::Command::new("rustc")
+        .arg("--version")
+        .output()
+        .ok()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_default();
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    Ok(serde_json::json!({
+        "tool": format!("bench-report {}", env!("CARGO_PKG_VERSION")),
+        "rustc": toolchain,
+        "unix_time": now,
+        "n_files": entries.len(),
+        "sha256": entries,
+    }))
 }
 
 fn read_results(dir: &PathBuf) -> anyhow::Result<Vec<(String, serde_json::Value)>> {
@@ -187,6 +257,43 @@ fn main() -> anyhow::Result<()> {
             match splice_into {
                 None => print!("{table}"),
                 Some(p) => splice(&p, &table)?,
+            }
+        }
+        Cmd::Manifest { paths, out, check } => {
+            let fresh = build_manifest(&paths)?;
+            if check {
+                let old: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&out)?)?;
+                let empty = serde_json::Map::new();
+                let old_map = old.get("sha256").and_then(|v| v.as_object()).unwrap_or(&empty);
+                let new_map = fresh.get("sha256").and_then(|v| v.as_object()).unwrap_or(&empty);
+                let mut diffs = Vec::new();
+                for (k, v) in old_map {
+                    match new_map.get(k) {
+                        None => diffs.push(format!("missing: {k}")),
+                        Some(nv) if nv != v => diffs.push(format!("changed: {k}")),
+                        _ => {}
+                    }
+                }
+                for k in new_map.keys() {
+                    if !old_map.contains_key(k) {
+                        diffs.push(format!("new: {k}"));
+                    }
+                }
+                if diffs.is_empty() {
+                    println!("manifest OK: {} files match", old_map.len());
+                } else {
+                    for d in &diffs {
+                        println!("{d}");
+                    }
+                    std::process::exit(1);
+                }
+            } else {
+                std::fs::write(&out, serde_json::to_string_pretty(&fresh)?)?;
+                println!(
+                    "wrote {} ({} files)",
+                    out.display(),
+                    fresh.get("n_files").and_then(|n| n.as_u64()).unwrap_or(0)
+                );
             }
         }
     }
