@@ -1,0 +1,16 @@
+[package]
+name = "bench-report"
+version = "0.0.1"
+edition = "2021"
+license = "MIT"
+description = "Shared results-to-README renderer across the bench suite. Reads results/*.json and splices a Markdown table between sentinels in a README."
+repository = "https://github.com/Intermountainh8ter/bench-report"
+
+[dependencies]
+clap = { version = "4", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+
+[[bin]]
+name = "bench-report"
+path = "src/main.rs"
