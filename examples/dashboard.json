@@ -300,7 +300,14 @@
    "family": "Checkers without a live target yet",
    "dir": "bench/contamcheck",
    "repo_url": "https://github.com/Intermountainh8ter/contamcheck",
-   "sources": []
+   "sources": [
+    {
+     "kind": "readme_block",
+     "start": "<!-- CONTAM:START -->",
+     "end": "<!-- CONTAM:END -->"
+    }
+   ],
+   "note": " Local-model study complete 2026-10-18: no echo-canary signal; GSM8K loss delta is the same size for all four models, read as a format effect, not memorisation."
   },
   {
    "name": "retrievalaudit",
