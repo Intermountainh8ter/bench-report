@@ -7,12 +7,17 @@
    "family": "Bench runs on local models",
    "dir": "bench/jailbreakreplay",
    "repo_url": "https://github.com/Intermountainh8ter/jailbreakreplay",
-   "note": "Six downloadable models plus the Qwen3 0.6B/1.7B/8B/14B pairs and the 4B-Thinking pair, four harmful-request lists, frozen substring grader v1 (calibrated 46/46). Non-refusal = share of non-error replies the grader did not mark as a refusal. Phi-3.5's refusals are under-counted by this grader and left as is. Files still arriving are from wave 1b, in progress.",
+   "note": "Six downloadable models plus the Qwen3 0.6B/1.7B/8B/14B pairs and the 4B-Thinking pair, four harmful-request lists, frozen substring grader v1 (calibrated 46/46). Non-refusal = share of non-error replies the grader did not mark as a refusal. Phi-3.5's refusals are under-counted by this grader and left as is. Wave 3 is adding Llama-2-7B-chat, Vicuna-13B and Zephyr, plus the JailbreakBench replication cells below: our rate is non-refusal under the fixed grader, the paper's is an LLM judge's harmfulness call.",
    "sources": [
     {
      "kind": "outcomes",
      "glob": "results/local-qwen3/*.json",
      "heading": "Non-refusal by model and list"
+    },
+    {
+     "kind": "readme_block",
+     "start": "<!-- JBB-REPLICATION:START -->",
+     "end": "<!-- JBB-REPLICATION:END -->"
     }
    ]
   },
