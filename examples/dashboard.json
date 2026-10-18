@@ -145,7 +145,7 @@
    "family": "Experiments",
    "dir": "bench/trialgauntlet",
    "repo_url": "https://github.com/Intermountainh8ter/trialgauntlet",
-   "note": "pass^k beside pass@k on three synthetic environments; Qwen3-8B stock vs abliterated.",
+   "note": "pass^k beside pass@k on three synthetic environments; Qwen3 stock vs abliterated pairs at 8B and 14B, plus a Qwen3-4B row that is a format failure (552/552 no_action). 2026-10-18 README correction: the earlier 8B \"overall\" violation rate was config-only.",
    "sources": [
     {
      "kind": "readme_block",
