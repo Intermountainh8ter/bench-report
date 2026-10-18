@@ -53,6 +53,20 @@ enum Cmd {
         #[arg(long)]
         splice_into: Option<PathBuf>,
     },
+    /// Render one HTML status page across many repositories from a JSON
+    /// config. Every number on the page comes from a committed result file
+    /// or a README block that a repo's own renderer produced; the page adds
+    /// git provenance (commit, date, dirty flag) per repo and nothing else.
+    Dashboard {
+        /// Config JSON: {"title","projects":[{name,family,dir,repo_url,note,sources:[...]}]}.
+        #[arg(long)]
+        config: PathBuf,
+        /// Directory that relative `dir` entries in the config resolve against.
+        #[arg(long)]
+        base: PathBuf,
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Write a reproducibility manifest: SHA-256 of every regular file
     /// under each given path (recursively; hidden files skipped), plus the
     /// toolchain and the time. Exit code 1 if `--check` is given and any
@@ -123,6 +137,461 @@ fn build_manifest(paths: &[PathBuf]) -> anyhow::Result<serde_json::Value> {
         "n_files": entries.len(),
         "sha256": entries,
     }))
+}
+
+// ---------- dashboard ----------
+
+mod dashboard {
+    use serde::Deserialize;
+    use std::path::{Path, PathBuf};
+
+    #[derive(Deserialize)]
+    pub struct Config {
+        pub title: String,
+        #[serde(default)]
+        pub subtitle: String,
+        pub projects: Vec<Project>,
+    }
+
+    #[derive(Deserialize)]
+    pub struct Project {
+        pub name: String,
+        pub family: String,
+        pub dir: String,
+        #[serde(default)]
+        pub repo_url: String,
+        #[serde(default)]
+        pub note: String,
+        #[serde(default)]
+        pub sources: Vec<Source>,
+    }
+
+    /// Where a project's numbers come from. Each variant reads committed files only.
+    #[derive(Deserialize)]
+    #[serde(tag = "kind", rename_all = "snake_case")]
+    pub enum Source {
+        /// A block of the repo README between two sentinel comments, already rendered
+        /// by that repo's own tool from its result files.
+        ReadmeBlock { start: String, end: String, #[serde(default)] file: Option<String> },
+        /// JSON files holding an `outcomes` array of "Success" / "Fail" / "Error".
+        Outcomes { glob: String, #[serde(default)] heading: String },
+        /// JSON files; one row per file, one column per JSON pointer.
+        Fields { glob: String, columns: Vec<Column>, #[serde(default)] heading: String },
+    }
+
+    #[derive(Deserialize)]
+    pub struct Column {
+        pub label: String,
+        pub pointer: String,
+        #[serde(default)]
+        pub percent: bool,
+    }
+
+    pub struct Provenance {
+        pub commit: String,
+        pub date: String,
+        pub dirty: bool,
+    }
+
+    pub fn provenance(dir: &Path) -> Provenance {
+        let run = |args: &[&str]| -> String {
+            std::process::Command::new("git")
+                .arg("-C")
+                .arg(dir)
+                .args(args)
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+                .unwrap_or_default()
+        };
+        let commit = run(&["rev-parse", "--short", "HEAD"]);
+        let date = run(&["log", "-1", "--format=%cd", "--date=short"]);
+        let dirty = !run(&["status", "--porcelain", "--untracked-files=no"]).is_empty();
+        Provenance { commit, date, dirty }
+    }
+
+    pub fn esc(s: &str) -> String {
+        s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;").replace('"', "&quot;")
+    }
+
+    /// Inline markdown: code spans, links, bold. Everything else is escaped text.
+    pub fn inline(s: &str) -> String {
+        let mut out = String::new();
+        let mut rest = s;
+        while !rest.is_empty() {
+            if let Some(i) = rest.find('`') {
+                out.push_str(&inline_links(&rest[..i]));
+                let after = &rest[i + 1..];
+                if let Some(j) = after.find('`') {
+                    out.push_str("<code>");
+                    out.push_str(&esc(&after[..j]));
+                    out.push_str("</code>");
+                    rest = &after[j + 1..];
+                } else {
+                    out.push_str(&esc(&rest[i..]));
+                    break;
+                }
+            } else {
+                out.push_str(&inline_links(rest));
+                break;
+            }
+        }
+        out
+    }
+
+    fn inline_links(s: &str) -> String {
+        // [text](url) and **bold**, applied to escaped text.
+        let mut out = String::new();
+        let mut rest = s;
+        while let Some(i) = rest.find('[') {
+            let Some(close) = rest[i..].find("](") else { break };
+            let Some(end) = rest[i + close..].find(')') else { break };
+            let text = &rest[i + 1..i + close];
+            let url = &rest[i + close + 2..i + close + end];
+            out.push_str(&bold(&esc(&rest[..i])));
+            if url.starts_with("http") {
+                out.push_str(&format!("<a href=\"{}\">{}</a>", esc(url), bold(&esc(text))));
+            } else {
+                out.push_str(&bold(&esc(text)));
+            }
+            rest = &rest[i + close + end + 1..];
+        }
+        out.push_str(&bold(&esc(rest)));
+        out
+    }
+
+    fn bold(s: &str) -> String {
+        let mut out = String::new();
+        let mut parts = s.split("**");
+        if let Some(first) = parts.next() {
+            out.push_str(first);
+        }
+        let mut open = true;
+        for p in parts {
+            out.push_str(if open { "<strong>" } else { "</strong>" });
+            out.push_str(p);
+            open = !open;
+        }
+        if !open {
+            out.push_str("</strong>");
+        }
+        out
+    }
+
+    /// Markdown subset to HTML: pipe tables, bullet lists, paragraphs, `##`/`###` headings.
+    pub fn markdown(md: &str) -> String {
+        let mut html = String::new();
+        let lines: Vec<&str> = md.lines().collect();
+        let mut i = 0;
+        while i < lines.len() {
+            let l = lines[i].trim_end();
+            if l.trim().is_empty() {
+                i += 1;
+                continue;
+            }
+            if l.starts_with('|') {
+                let mut rows: Vec<Vec<String>> = Vec::new();
+                while i < lines.len() && lines[i].trim_start().starts_with('|') {
+                    let cells: Vec<String> = lines[i].trim().trim_matches('|').split('|').map(|c| c.trim().to_string()).collect();
+                    if !cells.iter().all(|c| c.chars().all(|ch| ch == '-' || ch == ':' || ch == ' ') && !c.is_empty()) {
+                        rows.push(cells);
+                    }
+                    i += 1;
+                }
+                html.push_str("<div class=\"tbl\"><table>");
+                for (r, cells) in rows.iter().enumerate() {
+                    html.push_str("<tr>");
+                    for c in cells {
+                        let tag = if r == 0 { "th" } else { "td" };
+                        html.push_str(&format!("<{tag}>{}</{tag}>", inline(c)));
+                    }
+                    html.push_str("</tr>");
+                }
+                html.push_str("</table></div>");
+                continue;
+            }
+            if l.starts_with("- ") || l.starts_with("* ") {
+                html.push_str("<ul>");
+                while i < lines.len() && (lines[i].starts_with("- ") || lines[i].starts_with("* ")) {
+                    html.push_str(&format!("<li>{}</li>", inline(&lines[i][2..])));
+                    i += 1;
+                }
+                html.push_str("</ul>");
+                continue;
+            }
+            if let Some(h) = l.strip_prefix("### ") {
+                html.push_str(&format!("<h4>{}</h4>", inline(h)));
+                i += 1;
+                continue;
+            }
+            if let Some(h) = l.strip_prefix("## ") {
+                html.push_str(&format!("<h4>{}</h4>", inline(h)));
+                i += 1;
+                continue;
+            }
+            let mut para = String::new();
+            while i < lines.len() && !lines[i].trim().is_empty() && !lines[i].starts_with('|') && !lines[i].starts_with("- ") && !lines[i].starts_with('#') {
+                if !para.is_empty() {
+                    para.push(' ');
+                }
+                para.push_str(lines[i].trim());
+                i += 1;
+            }
+            html.push_str(&format!("<p>{}</p>", inline(&para)));
+        }
+        html
+    }
+
+    pub fn readme_block(dir: &Path, file: Option<&str>, start: &str, end: &str) -> anyhow::Result<String> {
+        let path = dir.join(file.unwrap_or("README.md"));
+        let text = std::fs::read_to_string(&path)?;
+        let s = text.find(start).ok_or_else(|| anyhow::anyhow!("{} has no `{start}`", path.display()))?;
+        let e = text[s..].find(end).ok_or_else(|| anyhow::anyhow!("{} has no `{end}`", path.display()))? + s;
+        Ok(markdown(&text[s + start.len()..e]))
+    }
+
+    fn glob_files(dir: &Path, pattern: &str) -> anyhow::Result<Vec<PathBuf>> {
+        // Supports `<subdir>/<prefix>*<suffix>` with a single `*` in the final component.
+        let (sub, pat) = match pattern.rsplit_once('/') {
+            Some((a, b)) => (dir.join(a), b.to_string()),
+            None => (dir.to_path_buf(), pattern.to_string()),
+        };
+        let (prefix, suffix) = pat.split_once('*').unwrap_or((pat.as_str(), ""));
+        let mut out: Vec<PathBuf> = match std::fs::read_dir(&sub) {
+            Ok(rd) => rd
+                .filter_map(|e| e.ok().map(|e| e.path()))
+                .filter(|p| {
+                    p.is_file()
+                        && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(prefix) && n.ends_with(suffix) && n.len() >= prefix.len() + suffix.len())
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        };
+        out.sort();
+        Ok(out)
+    }
+
+    pub fn outcomes(dir: &Path, pattern: &str, heading: &str) -> anyhow::Result<String> {
+        let files = glob_files(dir, pattern)?;
+        if files.is_empty() {
+            return Ok(format!("<p class=\"muted\">No result files yet ({}).</p>", esc(pattern)));
+        }
+        let mut html = String::new();
+        if !heading.is_empty() {
+            html.push_str(&format!("<h4>{}</h4>", esc(heading)));
+        }
+        html.push_str("<div class=\"tbl\"><table><tr><th>result file</th><th class=\"n\">n</th><th class=\"n\">non-refusal</th><th class=\"n\">errors</th></tr>");
+        for f in files {
+            let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&f)?)?;
+            let Some(arr) = v.get("outcomes").and_then(|a| a.as_array()) else { continue };
+            let n = arr.len();
+            let succ = arr.iter().filter(|o| o.as_str() == Some("Success")).count();
+            let err = arr.iter().filter(|o| o.as_str() == Some("Error")).count();
+            let denom = n.saturating_sub(err);
+            let rate = if denom > 0 { succ as f64 / denom as f64 } else { f64::NAN };
+            html.push_str(&format!(
+                "<tr><td>{}</td><td class=\"n\">{}</td><td class=\"n\">{:.1}%</td><td class=\"n\">{}</td></tr>",
+                esc(f.file_stem().and_then(|s| s.to_str()).unwrap_or("?")),
+                n,
+                rate * 100.0,
+                err
+            ));
+        }
+        html.push_str("</table></div>");
+        Ok(html)
+    }
+
+    fn pointer<'a>(v: &'a serde_json::Value, p: &str) -> Option<&'a serde_json::Value> {
+        let mut cur = v;
+        for k in p.trim_start_matches('/').split('/') {
+            if k.is_empty() {
+                continue;
+            }
+            cur = match cur {
+                serde_json::Value::Object(m) => m.get(k)?,
+                serde_json::Value::Array(a) => a.get(k.parse::<usize>().ok()?)?,
+                _ => return None,
+            };
+        }
+        Some(cur)
+    }
+
+    pub fn fields(dir: &Path, pattern: &str, cols: &[Column], heading: &str) -> anyhow::Result<String> {
+        let files = glob_files(dir, pattern)?;
+        if files.is_empty() {
+            return Ok(format!("<p class=\"muted\">No result files yet ({}).</p>", esc(pattern)));
+        }
+        let mut html = String::new();
+        if !heading.is_empty() {
+            html.push_str(&format!("<h4>{}</h4>", esc(heading)));
+        }
+        html.push_str("<div class=\"tbl\"><table><tr><th>file</th>");
+        for c in cols {
+            html.push_str(&format!("<th>{}</th>", esc(&c.label)));
+        }
+        html.push_str("</tr>");
+        for f in files {
+            // Python-written files sometimes carry bare NaN / Infinity tokens, which are not JSON.
+            // They are read as null (rendered "null"), never as a number.
+            let text = std::fs::read_to_string(&f)?
+                .replace(": NaN", ": null")
+                .replace(": -Infinity", ": null")
+                .replace(": Infinity", ": null");
+            let v: serde_json::Value = serde_json::from_str(&text)?;
+            html.push_str(&format!("<tr><td>{}</td>", esc(f.file_stem().and_then(|s| s.to_str()).unwrap_or("?"))));
+            for c in cols {
+                let cell = match pointer(&v, &c.pointer) {
+                    None => "<span class=\"missing\">missing</span>".to_string(),
+                    Some(serde_json::Value::Number(n)) => {
+                        let x = n.as_f64().unwrap_or(f64::NAN);
+                        if c.percent {
+                            format!("{:.1}%", x * 100.0)
+                        } else if x.fract() == 0.0 && x.abs() < 1e12 {
+                            format!("{}", x as i64)
+                        } else {
+                            format!("{x:.3}")
+                        }
+                    }
+                    Some(serde_json::Value::String(s)) => esc(s),
+                    Some(serde_json::Value::Bool(b)) => b.to_string(),
+                    Some(serde_json::Value::Null) => "null".into(),
+                    Some(other) => esc(&other.to_string()),
+                };
+                html.push_str(&format!("<td>{cell}</td>"));
+            }
+            html.push_str("</tr>");
+        }
+        html.push_str("</table></div>");
+        Ok(html)
+    }
+
+    pub fn newest_result(dir: &Path) -> (usize, String) {
+        let mut n = 0usize;
+        let mut newest: Option<std::time::SystemTime> = None;
+        fn walk(p: &Path, n: &mut usize, newest: &mut Option<std::time::SystemTime>) {
+            if let Ok(rd) = std::fs::read_dir(p) {
+                for e in rd.flatten() {
+                    let path = e.path();
+                    if path.is_dir() {
+                        walk(&path, n, newest);
+                    } else if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                        *n += 1;
+                        if let Ok(m) = e.metadata().and_then(|m| m.modified()) {
+                            if newest.map_or(true, |x| m > x) {
+                                *newest = Some(m);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        walk(&dir.join("results"), &mut n, &mut newest);
+        let when = newest
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| fmt_utc(d.as_secs() as i64))
+            .unwrap_or_else(|| "none".into());
+        (n, when)
+    }
+
+    /// `YYYY-MM-DD HH:MM UTC` from unix seconds (civil-from-days, Howard Hinnant).
+    pub fn fmt_utc(secs: i64) -> String {
+        let days = secs.div_euclid(86400);
+        let z = days + 719468;
+        let era = z.div_euclid(146097);
+        let doe = z - era * 146097;
+        let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let d = doy - (153 * mp + 2) / 5 + 1;
+        let m = if mp < 10 { mp + 3 } else { mp - 9 };
+        let y = if m <= 2 { y + 1 } else { y };
+        let rem = secs.rem_euclid(86400);
+        format!("{y:04}-{m:02}-{d:02} {:02}:{:02} UTC", rem / 3600, (rem % 3600) / 60)
+    }
+}
+
+fn render_dashboard(config: &PathBuf, base: &PathBuf, out: &PathBuf) -> anyhow::Result<()> {
+    use dashboard::*;
+    let cfg: Config = serde_json::from_str(&std::fs::read_to_string(config)?)?;
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs();
+    let mut families: Vec<String> = Vec::new();
+    for p in &cfg.projects {
+        if !families.contains(&p.family) {
+            families.push(p.family.clone());
+        }
+    }
+    let mut body = String::new();
+    for fam in &families {
+        body.push_str(&format!("<section><h2>{}</h2>", esc(fam)));
+        for p in cfg.projects.iter().filter(|p| &p.family == fam) {
+            let dir = base.join(&p.dir);
+            let prov = provenance(&dir);
+            let (n_results, newest) = newest_result(&dir);
+            body.push_str("<article class=\"card\">");
+            body.push_str(&format!(
+                "<header><h3>{}</h3><div class=\"meta\">{}{} · {} result files, newest {}{}</div></header>",
+                if p.repo_url.is_empty() { esc(&p.name) } else { format!("<a href=\"{}\">{}</a>", esc(&p.repo_url), esc(&p.name)) },
+                if prov.commit.is_empty() { "no git".to_string() } else { format!("commit <code>{}</code> {}", esc(&prov.commit), esc(&prov.date)) },
+                if prov.dirty { " <span class=\"warn\">uncommitted changes</span>" } else { "" },
+                n_results,
+                esc(&newest),
+                if p.repo_url.is_empty() { String::new() } else { format!(" · <a href=\"{}/actions\">CI</a>", esc(&p.repo_url)) }
+            ));
+            if !p.note.is_empty() {
+                body.push_str(&format!("<p class=\"note\">{}</p>", inline(&p.note)));
+            }
+            if p.sources.is_empty() {
+                body.push_str("<p class=\"muted\">No results published yet.</p>");
+            }
+            for s in &p.sources {
+                let html = match s {
+                    Source::ReadmeBlock { start, end, file } => readme_block(&dir, file.as_deref(), start, end),
+                    Source::Outcomes { glob, heading } => outcomes(&dir, glob, heading),
+                    Source::Fields { glob, columns, heading } => fields(&dir, glob, columns, heading),
+                };
+                match html {
+                    Ok(h) => body.push_str(&h),
+                    Err(e) => body.push_str(&format!("<p class=\"missing\">source unavailable: {}</p>", esc(&e.to_string()))),
+                }
+            }
+            body.push_str("</article>");
+        }
+        body.push_str("</section>");
+    }
+    let page = format!(
+        r##"<title>{title}</title>
+<style>
+:root{{--bg:#f6f3ec;--fg:#141414;--muted:#6b6b6b;--rule:#d9d4ca;--card:#ffffff;--accent:#8a3f1b;--warn:#a06811;--bad:#a62a1f;color-scheme:light}}
+@media (prefers-color-scheme: dark){{:root:not([data-theme="light"]){{--bg:#121212;--fg:#ededed;--muted:#a0a0a0;--rule:#2a2a2a;--card:#1a1a1a;--accent:#e38a5f;--warn:#e3a84a;--bad:#e6716b;color-scheme:dark}}}}
+:root[data-theme="dark"]{{--bg:#121212;--fg:#ededed;--muted:#a0a0a0;--rule:#2a2a2a;--card:#1a1a1a;--accent:#e38a5f;--warn:#e3a84a;--bad:#e6716b;color-scheme:dark}}
+*{{box-sizing:border-box}}body{{background:var(--bg);color:var(--fg);font-family:ui-sans-serif,system-ui,-apple-system,sans-serif;line-height:1.5;margin:0;padding-inline:16px;padding-block:1.5rem 3rem;font-size:15px}}
+main{{max-width:64rem;margin:0 auto}}h1{{font-size:1.6rem;margin:0 0 .25rem;letter-spacing:-.01em}}.sub{{color:var(--muted);font-size:.9rem;margin:0 0 2rem}}
+h2{{font-size:.75rem;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);margin:2.25rem 0 .9rem;font-weight:600}}
+.card{{background:var(--card);border:1px solid var(--rule);border-radius:6px;padding:.9rem 1rem;margin-bottom:.9rem;min-width:0}}
+.card h3{{font-size:1.05rem;margin:0}}.card h4{{font-size:.8rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);margin:.9rem 0 .4rem;font-weight:600}}
+.meta{{font-size:.82rem;color:var(--muted);margin-top:.15rem}}.note{{font-size:.9rem;margin:.6rem 0 0;color:var(--fg)}}.muted{{color:var(--muted);font-size:.9rem}}
+.warn{{color:var(--warn);font-weight:600}}.missing{{color:var(--bad);font-weight:600}}
+.tbl{{overflow-x:auto;margin-top:.6rem}}table{{border-collapse:collapse;font-size:.86rem;font-variant-numeric:tabular-nums;min-width:100%}}
+th,td{{padding:.35rem .6rem;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}}th{{font-size:.72rem;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}}
+td.n,th.n{{text-align:right}}code{{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-size:.86em;color:var(--accent)}}a{{color:var(--accent);text-decoration:none}}a:hover{{text-decoration:underline}}
+ul{{margin:.4rem 0;padding-left:1.2rem}}p{{margin:.4rem 0}}footer{{color:var(--muted);font-size:.8rem;font-style:italic;margin-top:2.5rem;padding-top:1rem;border-top:1px solid var(--rule)}}
+</style>
+<main>
+<header><h1>{title}</h1><p class="sub">{subtitle} · rendered {now} by bench-report {ver}</p></header>
+{body}
+<footer>Every table above is read from a committed result file or from a README block that the repository's own renderer produced from committed results. Commit hashes are the state of each working tree at render time. Nothing here is typed by hand; re-render to refresh.</footer>
+</main>"##,
+        title = esc(&cfg.title),
+        subtitle = esc(&cfg.subtitle),
+        now = dashboard::fmt_utc(now as i64),
+        ver = env!("CARGO_PKG_VERSION"),
+        body = body,
+    );
+    std::fs::write(out, page)?;
+    println!("wrote {} ({} projects, {} families)", out.display(), cfg.projects.len(), families.len());
+    Ok(())
 }
 
 fn read_results(dir: &PathBuf) -> anyhow::Result<Vec<(String, serde_json::Value)>> {
@@ -259,6 +728,7 @@ fn main() -> anyhow::Result<()> {
                 Some(p) => splice(&p, &table)?,
             }
         }
+        Cmd::Dashboard { config, base, out } => render_dashboard(&config, &base, &out)?,
         Cmd::Manifest { paths, out, check } => {
             let fresh = build_manifest(&paths)?;
             if check {
