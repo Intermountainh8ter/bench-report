@@ -18,6 +18,11 @@
      "kind": "readme_block",
      "start": "<!-- JBB-REPLICATION:START -->",
      "end": "<!-- JBB-REPLICATION:END -->"
+    },
+    {
+     "kind": "readme_block",
+     "start": "<!-- GRADER-V2:START -->",
+     "end": "<!-- GRADER-V2:END -->"
     }
    ]
   },
