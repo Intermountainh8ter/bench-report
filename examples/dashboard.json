@@ -26,7 +26,7 @@
    "family": "Bench runs on local models",
    "dir": "bench/shadowtrack",
    "repo_url": "https://github.com/Intermountainh8ter/shadowtrack",
-   "note": "Qwen3-4B stock vs its abliterated twin on 100 harmless prompts, with each endpoint also compared against itself.",
+   "note": "Qwen3-4B stock vs its abliterated twin on 100 harmless prompts, with each endpoint also compared against itself. Serving-determinism study (14 cells, two models, seven server configurations) complete 2026-10-18: single-slot temperature-0 serving is not byte-deterministic on this stack (H1 not supported).",
    "sources": [
     {
      "kind": "fields",
@@ -76,6 +76,11 @@
        "pointer": "/self_agreement_confound"
       }
      ]
+    },
+    {
+     "kind": "readme_block",
+     "start": "<!-- DETERMINISM:START -->",
+     "end": "<!-- DETERMINISM:END -->"
     }
    ]
   },
