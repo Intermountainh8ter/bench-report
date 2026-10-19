@@ -273,11 +273,17 @@
   },
   {
    "name": "guardaudit",
-   "family": "Checkers without a live target yet",
+   "family": "Checkers with live results",
    "dir": "bench/guardaudit",
    "repo_url": "https://github.com/Intermountainh8ter/guardaudit",
-   "note": "Llama-Guard-3-8B is downloaded and queued as the first live target.",
-   "sources": []
+   "note": "First live audit 2026-10-19: Llama Guard 3 8B Q8_0 not certified (OOD ECE upper bound 0.065 > 0.05; recall gate passes). Fixture texts stay out of git; manifest of hashes committed.",
+   "sources": [
+    {
+     "kind": "readme_block",
+     "start": "<!-- RESULTS:START -->",
+     "end": "<!-- RESULTS:END -->"
+    }
+   ]
   },
   {
    "name": "budgetguard",
@@ -345,34 +351,52 @@
   },
   {
    "name": "mcpprobe",
-   "family": "Scaffolds",
+   "family": "Checkers with live results",
    "dir": "bench/mcpprobe",
    "repo_url": "https://github.com/Intermountainh8ter/mcpprobe",
-   "note": "Estimators only; no live driver yet.",
-   "sources": []
+   "note": "First live runs 2026-10-19 on mcp-server-time and mcp-server-git: every task 8/8, gap 0; degenerate-caller audit flags two git tasks (empty repo_path answers for the cwd).",
+   "sources": [
+    {
+     "kind": "readme_block",
+     "start": "<!-- RESULTS:START -->",
+     "end": "<!-- RESULTS:END -->"
+    }
+   ]
   },
   {
    "name": "rewardcoherence",
-   "family": "Scaffolds",
+   "family": "Checkers with live results",
    "dir": "bench/rewardcoherence",
    "repo_url": "https://github.com/Intermountainh8ter/rewardcoherence",
-   "note": "Statistics only; no live driver yet.",
-   "sources": []
+   "note": "First live audit 2026-10-19: OpenAssistant DeBERTa RM on Qwen3-4B responses, tau-b 0.914 between T=0.3 and T=1.0 arms (coherent) but flagged: the length-only ranker reaches its interval.",
+   "sources": [
+    {
+     "kind": "readme_block",
+     "start": "<!-- RESULTS:START -->",
+     "end": "<!-- RESULTS:END -->"
+    }
+   ]
   },
   {
    "name": "tokenwitness",
-   "family": "Scaffolds",
+   "family": "Checkers with live results",
    "dir": "bench/tokenwitness",
    "repo_url": "https://github.com/Intermountainh8ter/tokenwitness",
-   "note": "Diff only; no capture adapters yet.",
-   "sources": []
+   "note": "First captures 2026-10-19: Qwen3-4B-Instruct-2507 template renders byte-identically on transformers, llama-server and minijinja (null result).",
+   "sources": [
+    {
+     "kind": "readme_block",
+     "start": "<!-- RESULTS:START -->",
+     "end": "<!-- RESULTS:END -->"
+    }
+   ]
   },
   {
    "name": "bookrecord",
    "family": "Trading systems",
    "dir": "projects/trading/bookrecord",
    "repo_url": "https://github.com/Intermountainh8ter/bookrecord",
-   "note": "L2 order-book recorder: venue continuity rule enforced per event, gap resync, zstd capture with manifest, independent verify. Binance.com is geo-blocked from this host (HTTP 451); Binance.US works.",
+   "note": "L2 order-book recorder: venue continuity rule enforced per event; Binance.US, Kraken (CRC32) and Coinbase Advanced Trade (sequence numbers) adapters live with captures.",
    "sources": [
     {
      "kind": "readme_block",
@@ -386,7 +410,7 @@
    "family": "Trading systems",
    "dir": "projects/trading/fillgate",
    "repo_url": "https://github.com/Intermountainh8ter/fillgate",
-   "note": "Execution engine: idempotent client IDs, validated state machine, risk gate, kill file, chaos-tested simulated exchange; paper-venue checks for Alpaca and Binance testnet. No live record yet.",
+   "note": "Execution engine: idempotent client IDs, validated state machine, risk gate, kill file, chaos SimExchange; Alpaca paper adapter + hourly Donchian paper tick and Hyperliquid testnet adapter (EIP-712 signing verified against SDK vectors) added 2026-10-19; no paper order placed yet (no key file).",
    "sources": []
   }
  ]
