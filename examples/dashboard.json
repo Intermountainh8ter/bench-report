@@ -31,7 +31,7 @@
    "family": "Bench runs on local models",
    "dir": "bench/shadowtrack",
    "repo_url": "https://github.com/Intermountainh8ter/shadowtrack",
-   "note": "Qwen3-4B stock vs its abliterated twin on 100 harmless prompts, with each endpoint also compared against itself. Serving-determinism study (14 cells, two models, seven server configurations) complete 2026-10-18: single-slot temperature-0 serving is not byte-deterministic on this stack (H1 not supported).",
+   "note": "Qwen3-4B stock vs its abliterated twin on 100 harmless prompts, with each endpoint also compared against itself. Serving-determinism study (14 cells, two models, seven server configurations) complete 2026-10-18: single-slot temperature-0 serving is not byte-deterministic on this stack (H1 not supported). 2026-10-19 C8 pilot: cache_prompt=false at one slot gives self-agreement 1.000 on both models; the single-slot disagreement was the prompt cache.",
    "sources": [
     {
      "kind": "fields",
@@ -145,7 +145,7 @@
    "family": "Experiments",
    "dir": "bench/trialgauntlet",
    "repo_url": "https://github.com/Intermountainh8ter/trialgauntlet",
-   "note": "pass^k beside pass@k on three synthetic environments; Qwen3 stock vs abliterated pairs at 8B and 14B, plus a Qwen3-4B row that is a format failure (552/552 no_action). 2026-10-18 README correction: the earlier 8B \"overall\" violation rate was config-only.",
+   "note": "pass^k beside pass@k on three synthetic environments; Qwen3 stock vs abliterated pairs at 8B and 14B, plus a Qwen3-4B row that is a format failure (552/552 no_action). 2026-10-18 README correction: the earlier 8B \"overall\" violation rate was config-only. 2026-10-19: pre-registered qwen3-4b-stock-native cell (own embedded template) emits parsed tool calls, 1.1/28.8/3.6 pass@1, 373/552 trials still no_action.",
    "sources": [
     {
      "kind": "readme_block",
@@ -276,7 +276,7 @@
    "family": "Checkers with live results",
    "dir": "bench/guardaudit",
    "repo_url": "https://github.com/Intermountainh8ter/guardaudit",
-   "note": "First live audit 2026-10-19: Llama Guard 3 8B Q8_0 not certified (OOD ECE upper bound 0.065 > 0.05; recall gate passes). Fixture texts stay out of git; manifest of hashes committed.",
+   "note": "Two classifiers audited 2026-10-19, neither certified: Llama Guard 3 8B fails calibration only (OOD ECE upper bound 0.065 > 0.05, recall 0.94); ShieldGemma 2B fails both gates (recall 0.44 OOD, ECE 0.39). Prompt Guard gated, not run.",
    "sources": [
     {
      "kind": "readme_block",
