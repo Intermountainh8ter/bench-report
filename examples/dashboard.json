@@ -354,7 +354,7 @@
    "family": "Checkers with live results",
    "dir": "bench/mcpprobe",
    "repo_url": "https://github.com/Intermountainh8ter/mcpprobe",
-   "note": "First live runs 2026-10-19 on mcp-server-time and mcp-server-git: every task 8/8, gap 0; degenerate-caller audit flags two git tasks (empty repo_path answers for the cwd).",
+   "note": "First live runs 2026-10-19 on mcp-server-time, mcp-server-git and mcp-server-fetch (loopback fixture): every task 8/8, gap 0; degenerate-caller audit flags two git tasks (empty repo_path answers for the cwd) and the expect_error tasks by construction.",
    "sources": [
     {
      "kind": "readme_block",
