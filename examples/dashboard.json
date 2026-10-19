@@ -7,7 +7,7 @@
    "family": "Bench runs on local models",
    "dir": "bench/jailbreakreplay",
    "repo_url": "https://github.com/Intermountainh8ter/jailbreakreplay",
-   "note": "Six downloadable models plus the Qwen3 0.6B/1.7B/8B/14B pairs and the 4B-Thinking pair, four harmful-request lists, frozen substring grader v1 (calibrated 46/46). Non-refusal = share of non-error replies the grader did not mark as a refusal. Phi-3.5's refusals are under-counted by this grader and left as is. Wave 3 is adding Llama-2-7B-chat, Vicuna-13B and Zephyr, plus the JailbreakBench replication cells below: our rate is non-refusal under the fixed grader, the paper's is an LLM judge's harmfulness call.",
+   "note": "Six downloadable models plus the Qwen3 0.6B/1.7B/8B/14B pairs and the 4B-Thinking pair, four harmful-request lists, frozen substring grader v1 (calibrated 46/46). Non-refusal = share of non-error replies the grader did not mark as a refusal. Phi-3.5's refusals are under-counted by this grader and left as is. Wave 3 is adding Llama-2-7B-chat, Vicuna-13B and Zephyr, plus the JailbreakBench replication cells below: our rate is non-refusal under the fixed grader, the paper's is an LLM judge's harmfulness call. 2026-10-19 grader-agreement study: v1 = v2 exactly on 1,200 completions; Llama Guard as classifier grader kappa 0.06 at raw 0.974.",
    "sources": [
     {
      "kind": "outcomes",
@@ -23,6 +23,11 @@
      "kind": "readme_block",
      "start": "<!-- GRADER-V2:START -->",
      "end": "<!-- GRADER-V2:END -->"
+    },
+    {
+     "kind": "readme_block",
+     "start": "<!-- GRADER-AGREEMENT:START -->",
+     "end": "<!-- GRADER-AGREEMENT:END -->"
     }
    ]
   },
