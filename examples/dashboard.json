@@ -276,7 +276,7 @@
    "family": "Checkers with live results",
    "dir": "bench/guardaudit",
    "repo_url": "https://github.com/Intermountainh8ter/guardaudit",
-   "note": "Two classifiers audited 2026-10-19, neither certified: Llama Guard 3 8B fails calibration only (OOD ECE upper bound 0.065 > 0.05, recall 0.94); ShieldGemma 2B fails both gates (recall 0.44 OOD, ECE 0.39). Prompt Guard gated, not run.",
+   "note": "Two classifiers audited 2026-10-19, neither certified: Llama Guard 3 8B fails calibration only (OOD ECE upper bound 0.065 > 0.05, recall 0.94); ShieldGemma 2B fails both gates (recall 0.44 OOD all-in-one, 0.65 per-policy; ECE 0.39 / 0.27). Prompt Guard gated, not run.",
    "sources": [
     {
      "kind": "readme_block",
