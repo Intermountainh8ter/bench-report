@@ -20,7 +20,7 @@ or spliced into a README between the sentinel comments
 
 ## Why Rust
 
-Per CLAUDE.md: everything is Rust. A shell `make_report` would have
+Every tool in this suite is Rust. A shell `make_report` would have
 diverged by now; a shared Rust tool stays consistent across every
 crate's result shape.
 
