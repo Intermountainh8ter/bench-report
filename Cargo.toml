@@ -18,3 +18,5 @@ serde = { version = "1.0.229", features = ["derive"] }
 [[bin]]
 name = "bench-report"
 path = "src/main.rs"
+
+[workspace]
